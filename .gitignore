@@ -1,0 +1,23 @@
+/target
+**/*.rs.bk
+*.pdb
+
+# Rivet Monitor's own configuration and state, which name real machines,
+# real folders and a real fleet. NOTHING that identifies this operator's
+# fleet belongs in a tracked file. The records sit beside the configuration,
+# so a configuration run from here would leave them here.
+/config.toml
+/state.toml
+/monitor-state.toml
+/notified.toml
+*.log
+
+# The staging directory the scheduler fetches into, on the destination's own
+# volume. It should never be inside the repository; this is the second defence.
+.rivet-monitor-staging/
+
+# Backups. If a destination is ever configured inside the repository by
+# accident, this is the second line of defence.
+/backups/
+*.sqlite
+*.db

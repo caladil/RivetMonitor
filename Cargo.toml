@@ -1,0 +1,101 @@
+[package]
+name = "rivet-monitor"
+version = "0.1.4"
+edition = "2024"
+# Let-chains (`if let … && …`), stable from 1.88. Declared, not yet proved by
+# a build on 1.88 itself.
+rust-version = "1.88"
+description = "A Windows 11 notification-area application that operates a Rivet fleet: it watches the fleet's health, and schedules, stores and retains the backups its applications offer."
+license = "MIT OR Apache-2.0"
+authors = ["Joel Lindell"]
+repository = "https://github.com/caladil/RivetMonitor"
+readme = "README.md"
+# A Windows tray application, built from its repository; and its Ignition
+# dependency is a git tag, which crates.io would refuse anyway.
+publish = false
+
+[[bin]]
+name = "rivet-monitor"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "allow"        # Win32 calls: the message pump in `tray.rs`, `GetLocalTime` in `clock.rs`, the Ctrl+C handler in `main.rs`
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+
+[dependencies]
+# Configuration and structured logging. ADR-001 §2 -- the same library every
+# sibling project carries, so this program's config file behaves like theirs.
+ignition = { git = "https://github.com/caladil/Ignition", tag = "v0.3.0" }
+# **The events Ignition's subscriber is installed to collect.** Ignition owns
+# the writer and the retention; it depends on `tracing` and does not re-export
+# it, so this program needs it directly to emit anything at all.
+#
+# Without it, `logging.enabled = true` opened a file that stayed EMPTY: every
+# announcement went to `eprintln!`, and a Windows GUI-subsystem process has no
+# stderr to receive it. On 2026-09-18 the backup worker died and the panic that
+# killed it was written nowhere, so a frozen tray icon went unexplained for
+# hours.
+tracing = "0.1"
+# **The parser `ignition::cli` hands back a `Command` from.** `Cli::command()`
+# returns clap's own type for the consumer to hang its arguments and
+# subcommands on, so composing a surface needs clap
+# in scope here. Ignition already carries it; this names it rather than
+# relying on that.
+clap = { version = "4", default-features = false, features = [
+    "std",
+    "help",
+    "usage",
+    "error-context",
+    "suggestions",
+    "string",
+] }
+
+serde = { version = "1", features = ["derive"] }
+# The fleet register arrives as JSON from `GET /api/fleet`; the ledger and the
+# configuration are TOML. `preserve_order` because the monitor stores a
+# machine's answer VERBATIM (SPEC-02 §5.2), and when §2.4's filter has to
+# re-serialise one it must come out in the machine's own key order.
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.9"
+# **The menu's switches are an edit to the operator's own file** (SPEC-01
+# §2.7), and that file is full of his comments. `toml` re-serialises and drops
+# every one; `toml_edit` changes one value and leaves every other byte alone.
+# Ignition already links this version, so naming it here adds no second copy.
+toml_edit = "0.25.15"
+
+# HTTPS with a CLIENT CERTIFICATE, which is the whole of this program's
+# authority (SPEC-01 §4). The same crate, version and posture `cargo rivet
+# backup` takes -- `default-features = false` so nothing is enabled here that
+# is not enabled there.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+# The notification area. `tray-icon` is the tauri ecosystem's tray crate and it
+# owns the icon; `muda` is the menu behind it and is re-exported, so both come
+# from one place rather than two that must agree about a handle.
+tray-icon = "0.24"
+
+# The Win32 message pump the tray needs, `ShellExecuteW` for opening a URL or
+# the configuration file, and the HKCU `Run` key behind "Start with Windows".
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_System_Registry",
+    "Win32_System_Console",
+    # GetLocalTime: the monitor names each day's file by the PC's local date
+    # (SPEC-02 §5.1).
+    "Win32_System_SystemInformation",
+    # TzSpecificLocalTimeToSystemTime: a backup schedule is written in local
+    # time, and each time is converted at its own date's offset (SPEC-01 §3.1).
+    "Win32_System_Time",
+] }
+# **The Windows notification** (SPEC-01 §5.5.4), chosen by the maintainer on
+# 2026-09-23 over the `windows` crate used directly and over the old tray
+# balloon. From the same project as `tray-icon`; it raises a real Windows 11
+# toast that lands in the notification centre and respects Do Not Disturb.
+tauri-winrt-notification = "0.8.1"
